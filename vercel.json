@@ -11,5 +11,8 @@
       "src": "/(.*)",
       "dest": "api/predict.py"
     }
-  ]
+  ],
+  "env": {
+    "PIP_NO_BINARY": ""
+  }
 }
