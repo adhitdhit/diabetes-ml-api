@@ -1,0 +1,59 @@
+{
+  "input_features": [
+    {
+      "name": "Pregnancies",
+      "type": "integer",
+      "min": 0,
+      "max": 17
+    },
+    {
+      "name": "Glucose",
+      "type": "float",
+      "min": 0,
+      "max": 200
+    },
+    {
+      "name": "BloodPressure",
+      "type": "float",
+      "min": 0,
+      "max": 140
+    },
+    {
+      "name": "SkinThickness",
+      "type": "float",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "name": "Insulin",
+      "type": "float",
+      "min": 0,
+      "max": 800
+    },
+    {
+      "name": "BMI",
+      "type": "float",
+      "min": 0,
+      "max": 70
+    },
+    {
+      "name": "DiabetesPedigreeFunction",
+      "type": "float",
+      "min": 0,
+      "max": 2.5
+    },
+    {
+      "name": "Age",
+      "type": "integer",
+      "min": 0,
+      "max": 100
+    }
+  ],
+  "output": {
+    "prediction": "0 (Non-Diabetes) or 1 (Diabetes)",
+    "probability": "0.0 - 1.0",
+    "riskScore": "0 - 100",
+    "riskLevel": "Rendah | Sedang | Tinggi | Sangat Tinggi",
+    "recommendations": "List of strings"
+  }
+}
