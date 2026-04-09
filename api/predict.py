@@ -3,14 +3,15 @@ from flask_cors import CORS
 import pickle
 import numpy as np
 import os
-import pandas as pd
 
 app = Flask(__name__)
-CORS(app)  # Izinkan request dari frontend
+CORS(app)
 
-# Load model saat aplikasi start
+# Load model
 try:
-    with open('diabetes_model.pkl', 'rb') as f:
+    # Untuk Vercel, path relatif dari root
+    model_path = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
+    with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
         model = model_data['model']
         scaler = model_data['scaler']
@@ -32,9 +33,15 @@ def home():
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
+        if model is None or scaler is None:
+            return jsonify({
+                'success': False,
+                'error': 'Model not loaded'
+            }), 500
+        
         data = request.json
         
-        # Extract features (URUTAN HARUS SAMA dengan training!)
+        # Extract features
         features = np.array([[
             data.get('Pregnancies', 0),
             data.get('Glucose'),
@@ -46,7 +53,7 @@ def predict():
             data.get('Age')
         ]])
         
-        # Scaling (pakai scaler yang sama dengan training)
+        # Scaling
         features_scaled = scaler.transform(features)
         
         # Prediction
@@ -114,5 +121,4 @@ def get_recommendations(probability, prediction):
         ]
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=7860, debug=False)
