@@ -133,6 +133,10 @@ def predict():
     except Exception as e:
         print(f"❌ Prediction Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
+    
+
+
+    
 
 @app.route('/prediction/<id>', methods=['GET'])
 def get_prediction(id):
@@ -144,6 +148,28 @@ def get_prediction(id):
         return jsonify({"success": False, "error": "Not found"}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    
+
+@app.route('/history', methods=['GET'])
+def get_history():
+    try:
+        cursor = collection.find({}).sort("createdAt", -1).limit(20)
+        history_list = []
+        for doc in cursor:
+            history_list.append({
+                "_id": str(doc["_id"]),
+                "patientName": doc.get("patientName"),
+                "patientGender": doc.get("patientGender"),
+                "Age": doc.get("Age"),
+                "status": doc.get("status"),
+                "createdAt": doc.get("createdAt").isoformat() if doc.get("createdAt") else None
+            })
+        return jsonify({"success": True, "data": history_list})
+    except Exception as e:
+        print(f"❌ Error fetching history: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    
+    
 
 @app.route('/')
 def home():
