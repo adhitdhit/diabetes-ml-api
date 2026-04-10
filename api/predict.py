@@ -154,22 +154,24 @@ def get_prediction(id):
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
-        # Ambil semua data
-        docs = collection.find({}).limit(20)
+        # ✅ SORT DESCENDING: -1 = terbaru di atas
+        cursor = collection.find({}).sort("createdAt", -1).limit(20)
         
-        # Convert ke list
-        result = []
-        for doc in docs:
-            result.append({
+        history_list = []
+        for doc in cursor:
+            history_list.append({
                 "_id": str(doc["_id"]),
-                "patientName": doc.get("patientName", ""),
-                "patientGender": doc.get("patientGender", ""),
-                "status": doc.get("status", ""),
-                "createdAt": str(doc.get("createdAt", ""))
+                "patientName": doc.get("patientName"),
+                "patientGender": doc.get("patientGender"),
+                "Age": doc.get("Age"),
+                "status": doc.get("status"),
+                "createdAt": doc.get("createdAt").isoformat() if doc.get("createdAt") else None
             })
+            
+        return jsonify({"success": True, "data": history_list})
         
-        return jsonify({"success": True, "data": result})
     except Exception as e:
+        print(f"❌ Error Loading History: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
     
 
