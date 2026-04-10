@@ -3,45 +3,58 @@ from flask_cors import CORS
 import pickle
 import numpy as np
 import os
+from pymongo import MongoClient
+from bson import ObjectId
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
-# Load model
+# --- KONFIGURASI DATABASE ---
+# Ambil URI dari Environment Variable Vercel
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority")
+client = MongoClient(MONGO_URI)
+db = client["Database"]
+collection = db["Database_3"]
+
+# --- LOAD MODEL ---
 try:
-    # Untuk Vercel, path relatif dari root
+    # Path untuk Vercel
     model_path = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
     with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
         model = model_data['model']
         scaler = model_data['scaler']
-    print("✅ Model loaded successfully!")
+    print("✅ Model & DB Connected!")
 except Exception as e:
-    print(f"❌ Error loading model: {e}")
-    model = None
-    scaler = None
+    print(f"❌ Error: {e}")
 
-@app.route('/')
-def home():
-    return jsonify({
-        'message': 'Diabetes ML API is running! 🎉',
-        'endpoints': {
-            'POST /predict': 'Send patient data to get prediction'
-        }
-    })
-
+# --- FUNGSI PREDIKSI & SIMPAN ---
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        if model is None or scaler is None:
-            return jsonify({
-                'success': False,
-                'error': 'Model not loaded'
-            }), 500
-        
         data = request.json
         
-        # Extract features
+        # 1. Simpan data mentah ke DB dulu (status: processing)
+        doc = {
+            "patientName": data.get('patientName', 'Unknown'),
+            "patientGender": data.get('patientGender', 'Unknown'),
+            "Pregnancies": data.get('Pregnancies', 0),
+            "Glucose": data.get('Glucose'),
+            "BloodPressure": data.get('BloodPressure', 0),
+            "SkinThickness": data.get('SkinThickness', 0),
+            "Insulin": data.get('Insulin', 0),
+            "BMI": data.get('BMI', 0),
+            "DiabetesPedigreeFunction": data.get('DiabetesPedigreeFunction', 0),
+            "Age": data.get('Age'),
+            "status": "processing",
+            "createdAt": datetime.now()
+        }
+        
+        result = collection.insert_one(doc)
+        doc_id = str(result.inserted_id)
+        
+        # 2. Lakukan Prediksi
         features = np.array([[
             data.get('Pregnancies', 0),
             data.get('Glucose'),
@@ -53,72 +66,63 @@ def predict():
             data.get('Age')
         ]])
         
-        # Scaling
         features_scaled = scaler.transform(features)
-        
-        # Prediction
-        prediction = int(model.predict(features_scaled)[0])
+        prediction_val = int(model.predict(features_scaled)[0])
         probability = float(model.predict_proba(features_scaled)[0][1])
         risk_score = round(probability * 100)
         
-        # Risk level
-        if probability >= 0.75:
-            risk_level = "Sangat Tinggi"
-        elif probability >= 0.50:
-            risk_level = "Tinggi"
-        elif probability >= 0.25:
-            risk_level = "Sedang"
-        else:
-            risk_level = "Rendah"
+        if probability >= 0.75: risk_level = "Sangat Tinggi"
+        elif probability >= 0.50: risk_level = "Tinggi"
+        elif probability >= 0.25: risk_level = "Sedang"
+        else: risk_level = "Rendah"
         
-        # Recommendations
-        recommendations = get_recommendations(probability, prediction)
+        recommendations = [
+            "Konsultasikan dengan dokter.",
+            "Jaga pola makan sehat.",
+            "Rutin cek gula darah."
+        ]
+
+        # 3. Update DB dengan hasil prediksi (status: completed)
+        collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {
+                "Prediction_Result": prediction_val,
+                "Risk_Score": risk_score,
+                "Risk_Level": risk_level,
+                "Recommendations": recommendations,
+                "Probability": probability,
+                "status": "completed",
+                "processedAt": datetime.now()
+            }}
+        )
         
+        # 4. Return ID ke Frontend
         return jsonify({
-            'success': True,
-            'prediction': prediction,
-            'probability': round(probability, 4),
-            'riskScore': risk_score,
-            'riskLevel': risk_level,
-            'recommendations': recommendations
+            "success": True,
+            "savedId": doc_id, # ✅ Ini yang bikin frontend happy!
+            "status": "completed",
+            "message": "Prediksi berhasil!"
         })
         
     except Exception as e:
-        print(f"❌ Prediction error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-def get_recommendations(probability, prediction):
-    if prediction == 1 or probability >= 0.75:
-        return [
-            "🚨 SANGAT TINGGI - Segera konsultasi",
-            "⚠️ Segera konsultasi ke dokter untuk pemeriksaan lebih lanjut.",
-            "Lakukan tes HbA1c untuk konfirmasi diagnosis diabetes.",
-            "Mulai pengaturan pola makan ketat (kurangi gula & karbohidrat)."
-        ]
-    elif probability >= 0.50:
-        return [
-            "🔴 TINGGI - Indikasi diabetes",
-            "Kurangi konsumsi gula & karbohidrat sederhana.",
-            "Tingkatkan aktivitas fisik minimal 30 menit/hari.",
-            "Monitor glukosa darah secara berkala."
-        ]
-    elif probability >= 0.25:
-        return [
-            "⚠️ SEDANG - Pre-diabetes",
-            "Pertahankan pola makan sehat dengan porsi seimbang.",
-            "Lakukan aktivitas fisik ringan-sedang secara teratur.",
-            "Periksa kesehatan tahunan untuk deteksi dini."
-        ]
-    else:
-        return [
-            "✅ RENDAH - Masih aman",
-            "Lanjutkan mempertahankan kebiasaan gaya hidup sehat.",
-            "Pemeriksaan kesehatan tahunan direkomendasikan.",
-            "Tetap aktif secara fisik dan jaga pola makan bergizi."
-        ]
+# --- FUNGSI CEK STATUS (YANG KEMARIN ERROR 404) ---
+@app.route('/prediction/<id>', methods=['GET'])
+def get_prediction(id):
+    try:
+        # Cari data by ID
+        doc = collection.find_one({"_id": ObjectId(id)})
+        if doc:
+            doc['_id'] = str(doc['_id']) # Convert ObjectId to string
+            return jsonify({"success": True, "data": doc})
+        return jsonify({"success": False, "error": "Not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/')
+def home():
+    return jsonify({"message": "Flask API with MongoDB is running! "})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=7860, debug=False)
+    app.run(debug=True)
