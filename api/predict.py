@@ -11,7 +11,6 @@ app = Flask(__name__)
 CORS(app)
 
 # --- KONFIGURASI DATABASE ---
-# Ambil URI dari Environment Variable Vercel
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority")
 client = MongoClient(MONGO_URI)
 db = client["Database"]
@@ -19,23 +18,23 @@ collection = db["Database_3"]
 
 # --- LOAD MODEL ---
 try:
-    # Path untuk Vercel
     model_path = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
     with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
         model = model_data['model']
         scaler = model_data['scaler']
-    print("✅ Model & DB Connected!")
+    print("✅ Model loaded & DB connected!")
 except Exception as e:
     print(f"❌ Error: {e}")
+    model = None
+    scaler = None
 
-# --- FUNGSI PREDIKSI & SIMPAN ---
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
         data = request.json
         
-        # 1. Simpan data mentah ke DB dulu (status: processing)
+        # 1. Simpan data ke DB (status: processing)
         doc = {
             "patientName": data.get('patientName', 'Unknown'),
             "patientGender": data.get('patientGender', 'Unknown'),
@@ -54,7 +53,7 @@ def predict():
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
-        # 2. Lakukan Prediksi
+        # 2. Prediksi
         features = np.array([[
             data.get('Pregnancies', 0),
             data.get('Glucose'),
@@ -77,12 +76,13 @@ def predict():
         else: risk_level = "Rendah"
         
         recommendations = [
-            "Konsultasikan dengan dokter.",
-            "Jaga pola makan sehat.",
-            "Rutin cek gula darah."
+            "Segera konsultasi ke dokter untuk pemeriksaan lebih lanjut.",
+            "Lakukan tes HbA1c untuk konfirmasi diagnosis diabetes.",
+            "Mulai pengaturan pola makan ketat (kurangi gula & karbohidrat).",
+            "Monitor glukosa darah secara rutin."
         ]
 
-        # 3. Update DB dengan hasil prediksi (status: completed)
+        # 3. Update DB dengan hasil
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -96,25 +96,28 @@ def predict():
             }}
         )
         
-        # 4. Return ID ke Frontend
+        # 4. Return dengan savedId ✅
         return jsonify({
             "success": True,
-            "savedId": doc_id, # ✅ Ini yang bikin frontend happy!
-            "status": "completed",
-            "message": "Prediksi berhasil!"
+            "savedId": doc_id,  # ← INI YANG KURANG!
+            "prediction": prediction_val,
+            "probability": probability,
+            "riskScore": risk_score,
+            "riskLevel": risk_level,
+            "recommendations": recommendations,
+            "status": "completed"
         })
         
     except Exception as e:
+        print(f"❌ Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-# --- FUNGSI CEK STATUS (YANG KEMARIN ERROR 404) ---
 @app.route('/prediction/<id>', methods=['GET'])
 def get_prediction(id):
     try:
-        # Cari data by ID
         doc = collection.find_one({"_id": ObjectId(id)})
         if doc:
-            doc['_id'] = str(doc['_id']) # Convert ObjectId to string
+            doc['_id'] = str(doc['_id'])
             return jsonify({"success": True, "data": doc})
         return jsonify({"success": False, "error": "Not found"}), 404
     except Exception as e:
@@ -122,7 +125,7 @@ def get_prediction(id):
 
 @app.route('/')
 def home():
-    return jsonify({"message": "Flask API with MongoDB is running! "})
+    return jsonify({"message": "Diabetes ML API with MongoDB is running! 🎉"})
 
 if __name__ == '__main__':
     app.run(debug=True)
