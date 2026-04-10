@@ -1,11 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pickle
-import numpy as np
-import os
 from pymongo import MongoClient
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta  
+import os
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 CORS(app)
@@ -39,21 +38,27 @@ def predict():
         now_wib = datetime.utcnow() + timedelta(hours=7)
 
         doc = {
-            "patientName": data.get('patientName', 'Unknown'),
-            "patientGender": data.get('patientGender', 'Unknown'),
-            "Pregnancies": data.get('Pregnancies', 0),
-            "Glucose": data.get('Glucose'),
-            "BloodPressure": data.get('BloodPressure', 0),
-            "SkinThickness": data.get('SkinThickness', 0),
-            "Insulin": data.get('Insulin', 0),
-            "BMI": data.get('BMI', 0),
-            "DiabetesPedigreeFunction": data.get('DiabetesPedigreeFunction', 0),
-            "Age": data.get('Age'),
-            "status": "processing",
-            "createdAt": now_wib()
-        }
+        "patientName": data.get('patientName'),
+        "patientGender": data.get('patientGender'),
+        "Pregnancies": data.get('Pregnancies'),
+        "Glucose": data.get('Glucose'),
+        "BloodPressure": data.get('BloodPressure'),
+        "SkinThickness": data.get('SkinThickness'),
+        "Insulin": data.get('Insulin'),
+        "BMI": data.get('BMI'),
+        "DiabetesPedigreeFunction": data.get('DiabetesPedigreeFunction'),
+        "Age": data.get('Age'),
+        "Prediction_Result": None,
+        "Risk_Score": None,
+        "Risk_Level": None,
+        "Recommendations": None,
+        "status": "processing",
+        "createdAt": now_wib,  # ✅ PAKAI VARIABLE INI
+        "processedAt": None
+    }
         
         result = collection.insert_one(doc)
+        
         doc_id = str(result.inserted_id)
         
         # 2. Prediksi
@@ -117,7 +122,7 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-               "processedAt": datetime.utcnow() + timedelta(hours=7)
+                "processedAt": datetime.utcnow() + timedelta(hours=7)
             }}
         )
         
