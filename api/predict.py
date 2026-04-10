@@ -35,6 +35,9 @@ def predict():
         data = request.json
         
         # 1. Simpan data ke DB (status: processing)
+
+        now_wib = datetime.utcnow() + timedelta(hours=7)
+
         doc = {
             "patientName": data.get('patientName', 'Unknown'),
             "patientGender": data.get('patientGender', 'Unknown'),
@@ -47,7 +50,7 @@ def predict():
             "DiabetesPedigreeFunction": data.get('DiabetesPedigreeFunction', 0),
             "Age": data.get('Age'),
             "status": "processing",
-            "createdAt": datetime.now()
+            "createdAt": now_wib()
         }
         
         result = collection.insert_one(doc)
@@ -114,7 +117,7 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-                "processedAt": datetime.now()
+               "processedAt": datetime.utcnow() + timedelta(hours=7)
             }}
         )
         
