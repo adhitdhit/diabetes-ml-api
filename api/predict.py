@@ -25,7 +25,7 @@ try:
         scaler = model_data['scaler']
     print("✅ Model loaded & DB connected!")
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"❌ Error loading model: {e}")
     model = None
     scaler = None
 
@@ -70,44 +70,38 @@ def predict():
         probability = float(model.predict_proba(features_scaled)[0][1])
         risk_score = round(probability * 100)
         
-        # Tentukan risk level
-        if probability >= 0.75:
-            risk_level = "Sangat Tinggi"
-        elif probability >= 0.50:
-            risk_level = "Tinggi"
-        elif probability >= 0.25:
-            risk_level = "Sedang"
-        else:
-            risk_level = "Rendah"
-        
-        # 3. Rekomendasi DINAMIS berdasarkan probability
-        if probability >= 0.75:
+        # 3. Risk Level & Rekomendasi 
+        if probability < 0.25:
+            risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
-                "🚨 SANGAT TINGGI - Segera konsultasi",
-                "Segera konsultasi ke dokter untuk pemeriksaan lebih lanjut.",
-                "Lakukan tes HbA1c untuk konfirmasi diagnosis diabetes.",
-                "Mulai pengaturan pola makan ketat (kurangi gula & karbohidrat)."
+                "Pertahankan pola makan sehat & bergizi seimbang.",
+                "Lakukan aktivitas fisik rutin minimal 150 menit/minggu.",
+                "Lakukan pemeriksaan kesehatan tahunan untuk deteksi dini.",
+                "Hindari konsumsi gula & lemak jenuh berlebihan."
             ]
-        elif probability >= 0.50:
+        elif probability < 0.50:
+            risk_level = "⚠️ SEDANG - Pre-diabetes"
             recommendations = [
-                "🔴 TINGGI - Indikasi diabetes",
-                "Kurangi konsumsi gula & karbohidrat sederhana.",
-                "Tingkatkan aktivitas fisik minimal 30 menit/hari.",
-                "Monitor glukosa darah secara berkala."
+                "Kurangi konsumsi karbohidrat sederhana & gula tambahan.",
+                "Tingkatkan aktivitas fisik (jalan cepat/sepeda 30 menit/hari).",
+                "Monitor kadar gula darah secara berkala.",
+                "Konsultasikan dengan ahli gizi untuk pengaturan diet."
             ]
-        elif probability >= 0.25:
+        elif probability < 0.75:
+            risk_level = "🔴 TINGGI - Indikasi diabetes"
             recommendations = [
-                "⚠️ SEDANG - Pre-diabetes",
-                "Pertahankan pola makan sehat dengan porsi seimbang.",
-                "Lakukan aktivitas fisik ringan-sedang secara teratur.",
-                "Periksa kesehatan tahunan untuk deteksi dini."
+                "Segera konsultasi ke dokter untuk evaluasi klinis.",
+                "Lakukan tes HbA1c & profil lipid lengkap.",
+                "Terapkan diet rendah glikemik & tinggi serat.",
+                "Hindari gaya hidup sedentari, perbanyak gerak aktif."
             ]
         else:
+            risk_level = "🚨 SANGAT TINGGI - Segera konsultasi"
             recommendations = [
-                "✅ RENDAH - Masih aman",
-                "Lanjutkan mempertahankan kebiasaan gaya hidup sehat.",
-                "Pemeriksaan kesehatan tahunan direkomendasikan.",
-                "Tetap aktif secara fisik dan jaga pola makan bergizi."
+                "Wajib konsultasi ke dokter spesialis penyakit dalam.",
+                "Lakukan pemeriksaan laboratorium lengkap segera.",
+                "Mulai terapi medis sesuai anjuran dokter.",
+                "Pantau gula darah harian & catat pola makan."
             ]
 
         # 4. Update DB dengan hasil
@@ -124,7 +118,7 @@ def predict():
             }}
         )
         
-        # 5. Return dengan savedId
+        # 5. Return ke Frontend
         return jsonify({
             "success": True,
             "savedId": doc_id,
@@ -137,7 +131,7 @@ def predict():
         })
         
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"❌ Prediction Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/prediction/<id>', methods=['GET'])
