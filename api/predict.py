@@ -2,12 +2,17 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 from bson import ObjectId
-from datetime import datetime, timedelta  
+from datetime import datetime, timedelta
 import os
+import pickle  
+import numpy as np 
 from dotenv import load_dotenv
 
 app = Flask(__name__)
 CORS(app)
+
+
+load_dotenv()
 
 # --- KONFIGURASI DATABASE ---
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority")
