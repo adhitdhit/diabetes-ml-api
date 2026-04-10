@@ -70,19 +70,47 @@ def predict():
         probability = float(model.predict_proba(features_scaled)[0][1])
         risk_score = round(probability * 100)
         
-        if probability >= 0.75: risk_level = "Sangat Tinggi"
-        elif probability >= 0.50: risk_level = "Tinggi"
-        elif probability >= 0.25: risk_level = "Sedang"
-        else: risk_level = "Rendah"
+        # Tentukan risk level
+        if probability >= 0.75:
+            risk_level = "Sangat Tinggi"
+        elif probability >= 0.50:
+            risk_level = "Tinggi"
+        elif probability >= 0.25:
+            risk_level = "Sedang"
+        else:
+            risk_level = "Rendah"
         
-        recommendations = [
-            "Segera konsultasi ke dokter untuk pemeriksaan lebih lanjut.",
-            "Lakukan tes HbA1c untuk konfirmasi diagnosis diabetes.",
-            "Mulai pengaturan pola makan ketat (kurangi gula & karbohidrat).",
-            "Monitor glukosa darah secara rutin."
-        ]
+        # 3. Rekomendasi DINAMIS berdasarkan probability
+        if probability >= 0.75:
+            recommendations = [
+                "🚨 SANGAT TINGGI - Segera konsultasi",
+                "Segera konsultasi ke dokter untuk pemeriksaan lebih lanjut.",
+                "Lakukan tes HbA1c untuk konfirmasi diagnosis diabetes.",
+                "Mulai pengaturan pola makan ketat (kurangi gula & karbohidrat)."
+            ]
+        elif probability >= 0.50:
+            recommendations = [
+                "🔴 TINGGI - Indikasi diabetes",
+                "Kurangi konsumsi gula & karbohidrat sederhana.",
+                "Tingkatkan aktivitas fisik minimal 30 menit/hari.",
+                "Monitor glukosa darah secara berkala."
+            ]
+        elif probability >= 0.25:
+            recommendations = [
+                "⚠️ SEDANG - Pre-diabetes",
+                "Pertahankan pola makan sehat dengan porsi seimbang.",
+                "Lakukan aktivitas fisik ringan-sedang secara teratur.",
+                "Periksa kesehatan tahunan untuk deteksi dini."
+            ]
+        else:
+            recommendations = [
+                "✅ RENDAH - Masih aman",
+                "Lanjutkan mempertahankan kebiasaan gaya hidup sehat.",
+                "Pemeriksaan kesehatan tahunan direkomendasikan.",
+                "Tetap aktif secara fisik dan jaga pola makan bergizi."
+            ]
 
-        # 3. Update DB dengan hasil
+        # 4. Update DB dengan hasil
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -96,10 +124,10 @@ def predict():
             }}
         )
         
-        # 4. Return dengan savedId ✅
+        # 5. Return dengan savedId
         return jsonify({
             "success": True,
-            "savedId": doc_id,  # ← INI YANG KURANG!
+            "savedId": doc_id,
             "prediction": prediction_val,
             "probability": probability,
             "riskScore": risk_score,
