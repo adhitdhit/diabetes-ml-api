@@ -3,7 +3,7 @@ from flask_cors import CORS
 import os
 import pickle  
 import numpy as np 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -12,9 +12,7 @@ app = Flask(__name__)
 CORS(app)
 load_dotenv()
 
-# ============================================
-# 1. MONGODB CONNECTION
-# ============================================
+# MongoDB Connection
 MONGO_URI = "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority&authSource=admin"
 
 db = None
@@ -27,11 +25,9 @@ try:
     collection = db["Database_3"]
     print("✅ MongoDB Connected!")
 except Exception as e:
-    print(f"❌ MongoDB Connection Failed: {e}")
+    print(f"❌ MongoDB Error: {e}")
 
-# ============================================
-# 2. LOAD MODEL PIPELINE
-# ============================================
+# Load Model
 pipeline = None
 try:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -42,21 +38,13 @@ try:
         pipeline = package['pipeline']
     print("✅ Pipeline Loaded!")
 except Exception as e:
-    print(f"❌ Model Load Failed: {e}")
+    print(f"❌ Model Error: {e}")
 
-# ============================================
-# 3. ROUTES
-# ============================================
-
+# Routes
 @app.route('/')
 def home():
-    return jsonify({
-        "status": "ok",
-        "mongo": "connected" if db else "failed",
-        "model": "loaded" if pipeline else "failed"
-    })
+    return jsonify({"status": "ok"})
 
-# ✅ CORS PREFLIGHT
 @app.route('/predict', methods=['OPTIONS'])
 @app.route('/history', methods=['OPTIONS'])
 @app.route('/prediction/<id>', methods=['OPTIONS'])
@@ -64,22 +52,17 @@ def options_handler():
     response = jsonify({"status": "ok"})
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     return response, 200
 
-# === PREDICT ===
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
         if pipeline is None:
-            return jsonify({"success": False, "error": "Model not loaded"}), 500
+            return jsonify({"error": "Model not loaded"}), 500
             
         data = request.json
         
-        # Simpan dalam format ISO WIB agar konsisten
-        wib_tz = timezone(timedelta(hours=7))
-        now_wib = datetime.now(wib_tz)
-
+        # Simpan data dengan timestamp standar (UTC)
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
             "patientGender": data.get('patientGender', '-'),
@@ -97,16 +80,14 @@ def predict():
             "Recommendations": None,
             "Probability": None,
             "status": "processing",
-            "createdAt": now_wib,
+            "createdAt": datetime.utcnow(),  # ✅ STANDAR UTC
             "processedAt": None
         }
         
-        if collection is None:
-            raise Exception("Database not connected")
-
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
+        # Prediksi
         raw_features = [
             data.get('Pregnancies'), data.get('Glucose'), data.get('BloodPressure'),
             data.get('SkinThickness'), data.get('Insulin'), data.get('BMI'),
@@ -119,7 +100,7 @@ def predict():
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # Rekomendasi Lengkap
+        # Rekomendasi
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -162,7 +143,7 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-                "processedAt": datetime.now(wib_tz)
+                "processedAt": datetime.utcnow()
             }}
         )
         
@@ -178,62 +159,31 @@ def predict():
         })
         
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-# === GET PREDICTION BY ID ===
 @app.route('/prediction/<id>', methods=['GET'])
 def get_prediction_by_id(id):
     try:
-        if collection is None:
-            return jsonify({"success": False, "error": "Database not connected"}), 500
-        
         doc = collection.find_one({"_id": ObjectId(id)})
         if not doc:
-            return jsonify({"success": False, "error": "Prediction not found"}), 404
+            return jsonify({"error": "Not found"}), 404
         
-        clean_doc = {}
-        for key, value in doc.items():
-            if isinstance(value, ObjectId):
-                clean_doc[key] = str(value)
-            elif isinstance(value, datetime):
-                # ✅ FIX: Pakai ISO Format biar Frontend React bisa baca
-                if value.tzinfo is None:
-                    wib_time = value.replace(tzinfo=timezone.utc) + timedelta(hours=7)
-                else:
-                    wib_time = value.astimezone(timezone(timedelta(hours=7)))
-                clean_doc[key] = wib_time.isoformat()
-            else:
-                clean_doc[key] = value
-        
-        return jsonify({"success": True, "data": clean_doc})
+        # Convert ObjectId to string
+        doc['_id'] = str(doc['_id'])
+        return jsonify({"success": True, "data": doc})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-# === HISTORY ===
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
-        if collection is None:
-            return jsonify({"success": False, "error": "Database not connected"}), 500
-            
         cursor = collection.find().sort("createdAt", -1).limit(50)
-        history_data = []
         
+        history_data = []
         for doc in cursor:
-            clean_doc = {}
-            for key, value in doc.items():
-                if isinstance(value, ObjectId):
-                    clean_doc[key] = str(value)
-                elif isinstance(value, datetime):
-                    # ✅ FIX: ISO Format agar new Date() di JS valid
-                    if value.tzinfo is None:
-                        wib_time = value.replace(tzinfo=timezone.utc) + timedelta(hours=7)
-                    else:
-                        wib_time = value.astimezone(timezone(timedelta(hours=7)))
-                    clean_doc[key] = wib_time.isoformat()
-                else:
-                    clean_doc[key] = value
-            history_data.append(clean_doc)
+            doc['_id'] = str(doc['_id'])
+            
+            history_data.append(doc)
         
         return jsonify({
             "success": True,
@@ -241,7 +191,7 @@ def get_history():
             "data": history_data
         })
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
