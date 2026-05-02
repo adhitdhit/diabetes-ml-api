@@ -13,7 +13,7 @@ load_dotenv()
 # --- LOAD PIPELINE (IMPUTER + SCALER + MODEL) ---
 # ✅ TIDAK ADA KONEKSI DATABASE DI SINI LAGI!
 try:
-    # Path yang benar untuk Vercel: dari api/index.py ke root/diabetes_model.pkl
+    # Path yang benar untuk Vercel: dari api/predict.py ke root/diabetes_model.pkl
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     model_path = os.path.join(BASE_DIR, 'diabetes_model.pkl')
     
@@ -35,6 +35,16 @@ def home():
             "health": "GET /"
         }
     })
+
+# ✅ CORS PREFLIGHT HANDLER (WAJIB UNTUK VERCEL!)
+@app.route('/predict', methods=['OPTIONS'])
+def predict_options():
+    """Handle CORS preflight request dari browser/axios"""
+    response = jsonify({"status": "ok"})
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    return response, 200
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -122,7 +132,6 @@ def predict():
             "riskLevel": risk_level,
             "recommendations": recommendations,
             "status": "completed"
-            # ❌ HAPUS: "savedId" — tidak ada lagi karena Flask tidak simpan ke DB
         })
         
     except Exception as e:
