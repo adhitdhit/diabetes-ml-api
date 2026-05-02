@@ -76,11 +76,10 @@ def predict():
             
         data = request.json
         
-        # Timezone WIB
+        # Simpan dalam format ISO WIB agar konsisten
         wib_tz = timezone(timedelta(hours=7))
         now_wib = datetime.now(wib_tz)
 
-        # 1. Simpan data mentah dulu (Status: Processing)
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
             "patientGender": data.get('patientGender', '-'),
@@ -108,7 +107,6 @@ def predict():
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
-        # 2. Persiapan Fitur (Null -> NaN)
         raw_features = [
             data.get('Pregnancies'), data.get('Glucose'), data.get('BloodPressure'),
             data.get('SkinThickness'), data.get('Insulin'), data.get('BMI'),
@@ -117,12 +115,11 @@ def predict():
         
         features = np.array([[np.nan if val is None else val for val in raw_features]], dtype=float)
         
-        # 3. Prediksi PAKAI PIPELINE
         prediction_val = int(pipeline.predict(features)[0])
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # 4. REKOMENDASI MEDIS LENGKAP 
+        # Rekomendasi Lengkap
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -132,7 +129,7 @@ def predict():
                 "Hindari konsumsi gula & lemak jenuh berlebihan."
             ]
         elif probability < 0.50:
-            risk_level = "️ SEDANG - Pre-diabetes"
+            risk_level = "⚠️ SEDANG - Pre-diabetes"
             recommendations = [
                 "Kurangi konsumsi karbohidrat sederhana & gula tambahan.",
                 "Tingkatkan aktivitas fisik (jalan cepat/sepeda 30 menit/hari).",
@@ -140,12 +137,12 @@ def predict():
                 "Konsultasikan dengan ahli gizi untuk pengaturan diet."
             ]
         elif probability < 0.75:
-            risk_level = " TINGGI - Indikasi diabetes"
+            risk_level = "🔴 TINGGI - Indikasi diabetes"
             recommendations = [
                 "Segera konsultasi ke dokter untuk evaluasi klinis.",
                 "Lakukan tes HbA1c & profil lipid lengkap.",
                 "Terapkan diet rendah glikemik & tinggi serat.",
-                "Hindari gaya hidup kurang sehat, perbanyak gerak aktif."
+                "Hindari gaya hidup tidak sehat, perbanyak gerak aktif."
             ]
         else:
             risk_level = "🚨 SANGAT TINGGI - Segera konsultasi"
@@ -156,7 +153,6 @@ def predict():
                 "Pantau gula darah harian & catat pola makan."
             ]
 
-        # 5. Update DB dengan hasil
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -184,7 +180,7 @@ def predict():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# === GET PREDICTION BY ID (BIAR RESULTS PAGE BACA) ===
+# === GET PREDICTION BY ID ===
 @app.route('/prediction/<id>', methods=['GET'])
 def get_prediction_by_id(id):
     try:
@@ -192,7 +188,6 @@ def get_prediction_by_id(id):
             return jsonify({"success": False, "error": "Database not connected"}), 500
         
         doc = collection.find_one({"_id": ObjectId(id)})
-        
         if not doc:
             return jsonify({"success": False, "error": "Prediction not found"}), 404
         
@@ -201,17 +196,16 @@ def get_prediction_by_id(id):
             if isinstance(value, ObjectId):
                 clean_doc[key] = str(value)
             elif isinstance(value, datetime):
-                # Format ke WIB String yang cantik
-                wib_time = value + timedelta(hours=7)
-                clean_doc[key] = wib_time.strftime("%d %B %Y pukul %H.%M")
+                # ✅ FIX: Pakai ISO Format biar Frontend React bisa baca
+                if value.tzinfo is None:
+                    wib_time = value.replace(tzinfo=timezone.utc) + timedelta(hours=7)
+                else:
+                    wib_time = value.astimezone(timezone(timedelta(hours=7)))
+                clean_doc[key] = wib_time.isoformat()
             else:
                 clean_doc[key] = value
         
-        return jsonify({
-            "success": True,
-            "data": clean_doc
-        })
-        
+        return jsonify({"success": True, "data": clean_doc})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -223,16 +217,20 @@ def get_history():
             return jsonify({"success": False, "error": "Database not connected"}), 500
             
         cursor = collection.find().sort("createdAt", -1).limit(50)
-        
         history_data = []
+        
         for doc in cursor:
             clean_doc = {}
             for key, value in doc.items():
                 if isinstance(value, ObjectId):
                     clean_doc[key] = str(value)
                 elif isinstance(value, datetime):
-                    wib_time = value + timedelta(hours=7)
-                    clean_doc[key] = wib_time.strftime("%d %B %Y pukul %H.%M")
+                    # ✅ FIX: ISO Format agar new Date() di JS valid
+                    if value.tzinfo is None:
+                        wib_time = value.replace(tzinfo=timezone.utc) + timedelta(hours=7)
+                    else:
+                        wib_time = value.astimezone(timezone(timedelta(hours=7)))
+                    clean_doc[key] = wib_time.isoformat()
                 else:
                     clean_doc[key] = value
             history_data.append(clean_doc)
@@ -242,7 +240,6 @@ def get_history():
             "count": len(history_data),
             "data": history_data
         })
-        
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
