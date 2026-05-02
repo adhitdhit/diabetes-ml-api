@@ -122,7 +122,7 @@ def predict():
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # 4. REKOMENDASI MEDIS LENGKAP (Sesuai Request Kamu)
+        # 4. REKOMENDASI MEDIS LENGKAP 
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -145,7 +145,7 @@ def predict():
                 "Segera konsultasi ke dokter untuk evaluasi klinis.",
                 "Lakukan tes HbA1c & profil lipid lengkap.",
                 "Terapkan diet rendah glikemik & tinggi serat.",
-                "Hindari gaya hidup sedentari, perbanyak gerak aktif."
+                "Hindari gaya hidup kurang sehat, perbanyak gerak aktif."
             ]
         else:
             risk_level = "🚨 SANGAT TINGGI - Segera konsultasi"
