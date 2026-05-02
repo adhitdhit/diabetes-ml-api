@@ -6,6 +6,8 @@ import numpy as np
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from bson.json_util import dumps
+from bson.objectid import ObjectId
 
 app = Flask(__name__)
 CORS(app)
@@ -14,21 +16,27 @@ load_dotenv()
 # ============================================
 # 1. MONGODB CONNECTION
 # ============================================
+# Pastikan URI lu bener. Kalau pakai password khusus, ganti di sini.
 MONGO_URI = "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority&authSource=admin"
 
+db = None
+collection = None
+
 try:
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
-    client.admin.command('ping')  # Test connection
+    # Timeout 5 detik aja, biar kalau gagal gak nunggu lama
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    # Ping buat test koneksi
+    client.admin.command('ping')
     db = client["Database"]
     collection = db["Database_3"]
-    print("✅ Connected to MongoDB successfully")
+    print("✅ MongoDB Connected!")
 except Exception as e:
-    print(f"❌ MongoDB Error: {e}")
+    print(f"❌ MongoDB Connection Failed: {e}")
     db = None
     collection = None
 
 # ============================================
-# 2. LOAD MODEL PIPELINE
+# 2. LOAD MODEL PIPELINE (SESUAI COLAB)
 # ============================================
 pipeline = None
 try:
@@ -37,10 +45,10 @@ try:
     
     with open(model_path, 'rb') as f:
         package = pickle.load(f)
-        pipeline = package['pipeline']
-    print("✅ Pipeline loaded successfully")
+        pipeline = package['pipeline']  # ✅ INI PIPELINE LU
+    print("✅ Pipeline Loaded!")
 except Exception as e:
-    print(f"❌ Model load error: {e}")
+    print(f"❌ Model Load Failed: {e}")
 
 # ============================================
 # 3. ROUTES
@@ -50,11 +58,11 @@ except Exception as e:
 def home():
     return jsonify({
         "status": "ok",
-        "mongo_connected": db is not None,
-        "model_loaded": pipeline is not None
+        "mongo": "connected" if db else "failed",
+        "model": "loaded" if pipeline else "failed"
     })
 
-# ✅ CORS Preflight
+# ✅ CORS PREFLIGHT
 @app.route('/predict', methods=['OPTIONS'])
 @app.route('/history', methods=['OPTIONS'])
 def options_handler():
@@ -64,21 +72,20 @@ def options_handler():
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     return response, 200
 
-# === PREDICT ENDPOINT (SAVE + PREDICT + UPDATE) ===
+# === PREDICT ===
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
         if pipeline is None:
-            return jsonify({"error": "Model not loaded"}), 500
+            return jsonify({"success": False, "error": "Model not loaded"}), 500
             
         data = request.json
-        
-        # 1. Simpan data ke DB (status: processing)
         now_wib = datetime.utcnow() + timedelta(hours=7)
 
+        # 1. Simpan data mentah dulu (Status: Processing)
         doc = {
-            "patientName": data.get('patientName'),
-            "patientGender": data.get('patientGender'),
+            "patientName": data.get('patientName', 'Anonim'),
+            "patientGender": data.get('patientGender', '-'),
             "Pregnancies": data.get('Pregnancies'),
             "Glucose": data.get('Glucose'),
             "BloodPressure": data.get('BloodPressure'),
@@ -97,66 +104,42 @@ def predict():
             "processedAt": None
         }
         
+        # Cek koneksi DB sebelum insert
+        if collection is None:
+            raise Exception("Database not connected")
+
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
-        # 2. Persiapan fitur (null → np.nan)
+        # 2. Persiapan Fitur (Null -> NaN)
         raw_features = [
-            data.get('Pregnancies'),
-            data.get('Glucose'),
-            data.get('BloodPressure'),
-            data.get('SkinThickness'),
-            data.get('Insulin'),
-            data.get('BMI'),
-            data.get('DiabetesPedigreeFunction'),
-            data.get('Age')
+            data.get('Pregnancies'), data.get('Glucose'), data.get('BloodPressure'),
+            data.get('SkinThickness'), data.get('Insulin'), data.get('BMI'),
+            data.get('DiabetesPedigreeFunction'), data.get('Age')
         ]
         
-        features = np.array([[
-            np.nan if val is None else val 
-            for val in raw_features
-        ]], dtype=float)
+        features = np.array([[np.nan if val is None else val for val in raw_features]], dtype=float)
         
-        # 3. Predict pakai PIPELINE
+        # 3. Prediksi PAKAI PIPELINE
         prediction_val = int(pipeline.predict(features)[0])
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # 4. Risk Level & Rekomendasi
+        # Logic Risk Level (Sama kayak dulu)
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
-            recommendations = [
-                "Pertahankan pola makan sehat & bergizi seimbang.",
-                "Lakukan aktivitas fisik rutin minimal 150 menit/minggu.",
-                "Lakukan pemeriksaan kesehatan tahunan untuk deteksi dini.",
-                "Hindari konsumsi gula & lemak jenuh berlebihan."
-            ]
+            recommendations = ["Pertahankan pola hidup sehat.", "Check-up rutin."]
         elif probability < 0.50:
             risk_level = "⚠️ SEDANG - Pre-diabetes"
-            recommendations = [
-                "Kurangi konsumsi karbohidrat sederhana & gula tambahan.",
-                "Tingkatkan aktivitas fisik (jalan cepat/sepeda 30 menit/hari).",
-                "Monitor kadar gula darah secara berkala.",
-                "Konsultasikan dengan ahli gizi untuk pengaturan diet."
-            ]
+            recommendations = ["Kurangi gula.", "Olahraga rutin."]
         elif probability < 0.75:
             risk_level = "🔴 TINGGI - Indikasi diabetes"
-            recommendations = [
-                "Segera konsultasi ke dokter untuk evaluasi klinis.",
-                "Lakukan tes HbA1c & profil lipid lengkap.",
-                "Terapkan diet rendah glikemik & tinggi serat.",
-                "Hindari gaya hidup sedentari, perbanyak gerak aktif."
-            ]
+            recommendations = ["Segera konsultasi dokter.", "Tes HbA1c."]
         else:
-            risk_level = "🚨 SANGAT TINGGI - Segera konsultasi"
-            recommendations = [
-                "Wajib konsultasi ke dokter spesialis penyakit dalam.",
-                "Lakukan pemeriksaan laboratorium lengkap segera.",
-                "Mulai terapi medis sesuai anjuran dokter.",
-                "Pantau gula darah harian & catat pola makan."
-            ]
+            risk_level = "🚨 SANGAT TINGGI"
+            recommendations = ["Wajib ke dokter.", "Terapi medis."]
 
-        # 5. Update DB dengan hasil
+        # 4. Update DB dengan hasil
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -170,7 +153,6 @@ def predict():
             }}
         )
         
-        # 6. Return ke Frontend
         return jsonify({
             "success": True,
             "savedId": doc_id,
@@ -183,34 +165,31 @@ def predict():
         })
         
     except Exception as e:
-        print(f"❌ Prediction Error: {str(e)}")
+        # ❌ INI PENTING: Kasi tau error detailnya ke frontend
         return jsonify({"success": False, "error": str(e)}), 500
 
-# === HISTORY ENDPOINT ===
+# === HISTORY (YANG SERING ERROR) ===
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
-        if not collection:
-            return jsonify({
-                "success": False, 
-                "error": "Database not connected",
-                "data": []
-            }), 500
-        
-        # Ambil 50 data terbaru
+        if collection is None:
+            return jsonify({"success": False, "error": "Database not connected"}), 500
+            
+        # Ambil data
         cursor = collection.find().sort("createdAt", -1).limit(50)
         
         history_data = []
         for doc in cursor:
-            # Convert ObjectId ke string
-            if '_id' in doc:
-                doc['_id'] = str(doc['_id'])
-            # Convert datetime ke ISO string
-            if 'createdAt' in doc and hasattr(doc['createdAt'], 'isoformat'):
-                doc['createdAt'] = doc['createdAt'].isoformat()
-            if 'processedAt' in doc and hasattr(doc['processedAt'], 'isoformat'):
-                doc['processedAt'] = doc['processedAt'].isoformat()
-            history_data.append(doc)
+            # ✅ KONVERSI MANUAL BIAR GAK CRASH JSON
+            clean_doc = {}
+            for key, value in doc.items():
+                if isinstance(value, ObjectId):
+                    clean_doc[key] = str(value)
+                elif isinstance(value, datetime):
+                    clean_doc[key] = value.isoformat()
+                else:
+                    clean_doc[key] = value
+            history_data.append(clean_doc)
         
         return jsonify({
             "success": True,
@@ -219,10 +198,10 @@ def get_history():
         })
         
     except Exception as e:
-        print(f"❌ History Error: {str(e)}")
+        # ❌ KASI TAU ERROR DETAILNYA
         return jsonify({
             "success": False, 
-            "error": str(e),
+            "error": "HISTORY ERROR: " + str(e),
             "data": []
         }), 500
 
