@@ -75,9 +75,12 @@ def predict():
             return jsonify({"success": False, "error": "Model not loaded"}), 500
             
         data = request.json
+        
+        # Timezone WIB
         wib_tz = timezone(timedelta(hours=7))
         now_wib = datetime.now(wib_tz)
 
+        # 1. Simpan data mentah dulu (Status: Processing)
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
             "patientGender": data.get('patientGender', '-'),
@@ -105,7 +108,7 @@ def predict():
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
-        # Fitur & Prediksi
+        # 2. Persiapan Fitur (Null -> NaN)
         raw_features = [
             data.get('Pregnancies'), data.get('Glucose'), data.get('BloodPressure'),
             data.get('SkinThickness'), data.get('Insulin'), data.get('BMI'),
@@ -114,23 +117,46 @@ def predict():
         
         features = np.array([[np.nan if val is None else val for val in raw_features]], dtype=float)
         
+        # 3. Prediksi PAKAI PIPELINE
         prediction_val = int(pipeline.predict(features)[0])
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
+        # 4. REKOMENDASI MEDIS LENGKAP (Sesuai Request Kamu)
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
-            recommendations = ["Pertahankan pola hidup sehat.", "Check-up rutin."]
+            recommendations = [
+                "Pertahankan pola makan sehat & bergizi seimbang.",
+                "Lakukan aktivitas fisik rutin minimal 150 menit/minggu.",
+                "Lakukan pemeriksaan kesehatan tahunan untuk deteksi dini.",
+                "Hindari konsumsi gula & lemak jenuh berlebihan."
+            ]
         elif probability < 0.50:
-            risk_level = "⚠️ SEDANG - Pre-diabetes"
-            recommendations = ["Kurangi gula.", "Olahraga rutin."]
+            risk_level = "️ SEDANG - Pre-diabetes"
+            recommendations = [
+                "Kurangi konsumsi karbohidrat sederhana & gula tambahan.",
+                "Tingkatkan aktivitas fisik (jalan cepat/sepeda 30 menit/hari).",
+                "Monitor kadar gula darah secara berkala.",
+                "Konsultasikan dengan ahli gizi untuk pengaturan diet."
+            ]
         elif probability < 0.75:
-            risk_level = "🔴 TINGGI - Indikasi diabetes"
-            recommendations = ["Segera konsultasi dokter.", "Tes HbA1c."]
+            risk_level = " TINGGI - Indikasi diabetes"
+            recommendations = [
+                "Segera konsultasi ke dokter untuk evaluasi klinis.",
+                "Lakukan tes HbA1c & profil lipid lengkap.",
+                "Terapkan diet rendah glikemik & tinggi serat.",
+                "Hindari gaya hidup sedentari, perbanyak gerak aktif."
+            ]
         else:
-            risk_level = "🚨 SANGAT TINGGI"
-            recommendations = ["Wajib ke dokter.", "Terapi medis."]
+            risk_level = "🚨 SANGAT TINGGI - Segera konsultasi"
+            recommendations = [
+                "Wajib konsultasi ke dokter spesialis penyakit dalam.",
+                "Lakukan pemeriksaan laboratorium lengkap segera.",
+                "Mulai terapi medis sesuai anjuran dokter.",
+                "Pantau gula darah harian & catat pola makan."
+            ]
 
+        # 5. Update DB dengan hasil
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -158,25 +184,24 @@ def predict():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# === GET PREDICTION BY ID (YANG TADI HILANG!) ===
+# === GET PREDICTION BY ID (BIAR RESULTS PAGE BACA) ===
 @app.route('/prediction/<id>', methods=['GET'])
 def get_prediction_by_id(id):
     try:
         if collection is None:
             return jsonify({"success": False, "error": "Database not connected"}), 500
         
-        # Cari data by ID
         doc = collection.find_one({"_id": ObjectId(id)})
         
         if not doc:
             return jsonify({"success": False, "error": "Prediction not found"}), 404
         
-        # Convert data
         clean_doc = {}
         for key, value in doc.items():
             if isinstance(value, ObjectId):
                 clean_doc[key] = str(value)
             elif isinstance(value, datetime):
+                # Format ke WIB String yang cantik
                 wib_time = value + timedelta(hours=7)
                 clean_doc[key] = wib_time.strftime("%d %B %Y pukul %H.%M")
             else:
