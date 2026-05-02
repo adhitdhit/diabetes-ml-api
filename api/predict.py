@@ -80,7 +80,7 @@ def predict():
             "Recommendations": None,
             "Probability": None,
             "status": "processing",
-            "createdAt": datetime.utcnow(),  # ✅ STANDAR UTC
+            "createdAt": datetime.utcnow(),
             "processedAt": None
         }
         
@@ -100,7 +100,7 @@ def predict():
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # Rekomendasi
+        # Rekomendasi LENGKAP 
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -164,36 +164,78 @@ def predict():
 @app.route('/prediction/<id>', methods=['GET'])
 def get_prediction_by_id(id):
     try:
+        if collection is None:
+            return jsonify({"error": "Database not connected"}), 500
+            
         doc = collection.find_one({"_id": ObjectId(id)})
         if not doc:
             return jsonify({"error": "Not found"}), 404
         
-        # ✅ CONVERT: ObjectId & datetime ke string
-        doc['_id'] = str(doc['_id'])
-        if 'createdAt' in doc:
-            doc['createdAt'] = doc['createdAt'].isoformat()
-        if 'processedAt' in doc:
-            doc['processedAt'] = doc['processedAt'].isoformat()
+        # BUILD CLEAN DICT - Convert semua field yang perlu
+        clean_doc = {
+            '_id': str(doc['_id']),
+            'patientName': doc.get('patientName', 'Unknown'),
+            'patientGender': doc.get('patientGender', 'Unknown'),
+            'Pregnancies': doc.get('Pregnancies'),
+            'Glucose': doc.get('Glucose'),
+            'BloodPressure': doc.get('BloodPressure'),
+            'SkinThickness': doc.get('SkinThickness'),
+            'Insulin': doc.get('Insulin'),
+            'BMI': doc.get('BMI'),
+            'DiabetesPedigreeFunction': doc.get('DiabetesPedigreeFunction'),
+            'Age': doc.get('Age'),
+            'Prediction_Result': doc.get('Prediction_Result'),
+            'Risk_Score': doc.get('Risk_Score'),
+            'Risk_Level': doc.get('Risk_Level'),
+            'Recommendations': doc.get('Recommendations', []),
+            'Probability': doc.get('Probability'),
+            'status': doc.get('status', 'unknown'),
+            'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc and hasattr(doc['createdAt'], 'isoformat') else None,
+            'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc and hasattr(doc['processedAt'], 'isoformat') else None
+        }
         
-        return jsonify({"success": True, "data": doc})
+        return jsonify({"success": True, "data": clean_doc})
     except Exception as e:
+        print(f"❌ Error get_prediction_by_id: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
+        if collection is None:
+            return jsonify({"error": "Database not connected"}), 500
+            
         cursor = collection.find().sort("createdAt", -1).limit(50)
         
         history_data = []
         for doc in cursor:
-            # ✅ CONVERT: ObjectId & datetime ke string
-            doc['_id'] = str(doc['_id'])
-            if 'createdAt' in doc:
-                doc['createdAt'] = doc['createdAt'].isoformat()
-            if 'processedAt' in doc:
-                doc['processedAt'] = doc['processedAt'].isoformat()
-            
-            history_data.append(doc)
+            try:
+                # BUILD CLEAN DICT untuk setiap dokumen
+                clean_doc = {
+                    '_id': str(doc['_id']),
+                    'patientName': doc.get('patientName', 'Unknown'),
+                    'patientGender': doc.get('patientGender', 'Unknown'),
+                    'Pregnancies': doc.get('Pregnancies'),
+                    'Glucose': doc.get('Glucose'),
+                    'BloodPressure': doc.get('BloodPressure'),
+                    'SkinThickness': doc.get('SkinThickness'),
+                    'Insulin': doc.get('Insulin'),
+                    'BMI': doc.get('BMI'),
+                    'DiabetesPedigreeFunction': doc.get('DiabetesPedigreeFunction'),
+                    'Age': doc.get('Age'),
+                    'Prediction_Result': doc.get('Prediction_Result'),
+                    'Risk_Score': doc.get('Risk_Score'),
+                    'Risk_Level': doc.get('Risk_Level'),
+                    'Recommendations': doc.get('Recommendations', []),
+                    'Probability': doc.get('Probability'),
+                    'status': doc.get('status', 'unknown'),
+                    'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc and hasattr(doc['createdAt'], 'isoformat') else None,
+                    'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc and hasattr(doc['processedAt'], 'isoformat') else None
+                }
+                history_data.append(clean_doc)
+            except Exception as doc_error:
+                print(f"⚠️ Error processing doc: {doc_error}")
+                continue
         
         return jsonify({
             "success": True,
@@ -201,6 +243,7 @@ def get_history():
             "data": history_data
         })
     except Exception as e:
+        print(f"❌ Error get_history: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
