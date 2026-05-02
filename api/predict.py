@@ -3,11 +3,10 @@ from flask_cors import CORS
 import os
 import pickle  
 import numpy as np 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pymongo import MongoClient
-from dotenv import load_dotenv
-from bson.json_util import dumps
 from bson.objectid import ObjectId
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 CORS(app)
@@ -16,27 +15,22 @@ load_dotenv()
 # ============================================
 # 1. MONGODB CONNECTION
 # ============================================
-# Pastikan URI lu bener. Kalau pakai password khusus, ganti di sini.
 MONGO_URI = "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority&authSource=admin"
 
 db = None
 collection = None
 
 try:
-    # Timeout 5 detik aja, biar kalau gagal gak nunggu lama
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    # Ping buat test koneksi
     client.admin.command('ping')
     db = client["Database"]
     collection = db["Database_3"]
     print("✅ MongoDB Connected!")
 except Exception as e:
     print(f"❌ MongoDB Connection Failed: {e}")
-    db = None
-    collection = None
 
 # ============================================
-# 2. LOAD MODEL PIPELINE (SESUAI COLAB)
+# 2. LOAD MODEL PIPELINE
 # ============================================
 pipeline = None
 try:
@@ -45,7 +39,7 @@ try:
     
     with open(model_path, 'rb') as f:
         package = pickle.load(f)
-        pipeline = package['pipeline']  # ✅ INI PIPELINE LU
+        pipeline = package['pipeline']
     print("✅ Pipeline Loaded!")
 except Exception as e:
     print(f"❌ Model Load Failed: {e}")
@@ -65,6 +59,7 @@ def home():
 # ✅ CORS PREFLIGHT
 @app.route('/predict', methods=['OPTIONS'])
 @app.route('/history', methods=['OPTIONS'])
+@app.route('/prediction/<id>', methods=['OPTIONS'])
 def options_handler():
     response = jsonify({"status": "ok"})
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -80,9 +75,9 @@ def predict():
             return jsonify({"success": False, "error": "Model not loaded"}), 500
             
         data = request.json
-        now_wib = datetime.utcnow() + timedelta(hours=7)
+        wib_tz = timezone(timedelta(hours=7))
+        now_wib = datetime.now(wib_tz)
 
-        # 1. Simpan data mentah dulu (Status: Processing)
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
             "patientGender": data.get('patientGender', '-'),
@@ -104,14 +99,13 @@ def predict():
             "processedAt": None
         }
         
-        # Cek koneksi DB sebelum insert
         if collection is None:
             raise Exception("Database not connected")
 
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
-        # 2. Persiapan Fitur (Null -> NaN)
+        # Fitur & Prediksi
         raw_features = [
             data.get('Pregnancies'), data.get('Glucose'), data.get('BloodPressure'),
             data.get('SkinThickness'), data.get('Insulin'), data.get('BMI'),
@@ -120,12 +114,10 @@ def predict():
         
         features = np.array([[np.nan if val is None else val for val in raw_features]], dtype=float)
         
-        # 3. Prediksi PAKAI PIPELINE
         prediction_val = int(pipeline.predict(features)[0])
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # Logic Risk Level (Sama kayak dulu)
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = ["Pertahankan pola hidup sehat.", "Check-up rutin."]
@@ -139,7 +131,6 @@ def predict():
             risk_level = "🚨 SANGAT TINGGI"
             recommendations = ["Wajib ke dokter.", "Terapi medis."]
 
-        # 4. Update DB dengan hasil
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -149,7 +140,7 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-                "processedAt": datetime.utcnow() + timedelta(hours=7)
+                "processedAt": datetime.now(wib_tz)
             }}
         )
         
@@ -165,28 +156,58 @@ def predict():
         })
         
     except Exception as e:
-        # ❌ INI PENTING: Kasi tau error detailnya ke frontend
         return jsonify({"success": False, "error": str(e)}), 500
 
-# === HISTORY (YANG SERING ERROR) ===
+# === GET PREDICTION BY ID (YANG TADI HILANG!) ===
+@app.route('/prediction/<id>', methods=['GET'])
+def get_prediction_by_id(id):
+    try:
+        if collection is None:
+            return jsonify({"success": False, "error": "Database not connected"}), 500
+        
+        # Cari data by ID
+        doc = collection.find_one({"_id": ObjectId(id)})
+        
+        if not doc:
+            return jsonify({"success": False, "error": "Prediction not found"}), 404
+        
+        # Convert data
+        clean_doc = {}
+        for key, value in doc.items():
+            if isinstance(value, ObjectId):
+                clean_doc[key] = str(value)
+            elif isinstance(value, datetime):
+                wib_time = value + timedelta(hours=7)
+                clean_doc[key] = wib_time.strftime("%d %B %Y pukul %H.%M")
+            else:
+                clean_doc[key] = value
+        
+        return jsonify({
+            "success": True,
+            "data": clean_doc
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# === HISTORY ===
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
         if collection is None:
             return jsonify({"success": False, "error": "Database not connected"}), 500
             
-        # Ambil data
         cursor = collection.find().sort("createdAt", -1).limit(50)
         
         history_data = []
         for doc in cursor:
-            # ✅ KONVERSI MANUAL BIAR GAK CRASH JSON
             clean_doc = {}
             for key, value in doc.items():
                 if isinstance(value, ObjectId):
                     clean_doc[key] = str(value)
                 elif isinstance(value, datetime):
-                    clean_doc[key] = value.isoformat()
+                    wib_time = value + timedelta(hours=7)
+                    clean_doc[key] = wib_time.strftime("%d %B %Y pukul %H.%M")
                 else:
                     clean_doc[key] = value
             history_data.append(clean_doc)
@@ -198,12 +219,7 @@ def get_history():
         })
         
     except Exception as e:
-        # ❌ KASI TAU ERROR DETAILNYA
-        return jsonify({
-            "success": False, 
-            "error": "HISTORY ERROR: " + str(e),
-            "data": []
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
