@@ -20,7 +20,7 @@ collection = db["Database_3"]
 
 # --- LOAD PIPELINE (IMPUTER + SCALER + MODEL) ---
 try:
-    model_path = os.path.join(os.path.dirname(__file__), '..', 'diabetes_model.pkl')
+    model_path = os.path.join(os.path.dirname(__file__),'diabetes_model.pkl')
     with open(model_path, 'rb') as f:
         package = pickle.load(f)
         # ✅ PERUBAHAN 1: Load pipeline lengkap, bukan model/scaler terpisah
