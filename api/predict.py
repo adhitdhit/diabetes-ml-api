@@ -13,7 +13,7 @@ CORS(app)
 load_dotenv()
 
 # --- KONFIGURASI DATABASE ---
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://dbUser:admin@cluster0.toqswqk.mongodb.net/Database?retryWrites=true&w=majority")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb://dbUser:admin@ac-xmhlfy4-shard-00-00.toqswqk.mongodb.net:27017,ac-xmhlfy4-shard-00-01.toqswqk.mongodb.net:27017,ac-xmhlfy4-shard-00-02.toqswqk.mongodb.net:27017/Database?ssl=true&replicaSet=atlas-4dejvt-shard-0&authSource=admin&appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client["Database"]
 collection = db["Database_3"]
