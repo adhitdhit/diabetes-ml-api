@@ -168,8 +168,13 @@ def get_prediction_by_id(id):
         if not doc:
             return jsonify({"error": "Not found"}), 404
         
-        # Convert ObjectId to string
+        # ✅ CONVERT: ObjectId & datetime ke string
         doc['_id'] = str(doc['_id'])
+        if 'createdAt' in doc:
+            doc['createdAt'] = doc['createdAt'].isoformat()
+        if 'processedAt' in doc:
+            doc['processedAt'] = doc['processedAt'].isoformat()
+        
         return jsonify({"success": True, "data": doc})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -181,7 +186,12 @@ def get_history():
         
         history_data = []
         for doc in cursor:
+            # ✅ CONVERT: ObjectId & datetime ke string
             doc['_id'] = str(doc['_id'])
+            if 'createdAt' in doc:
+                doc['createdAt'] = doc['createdAt'].isoformat()
+            if 'processedAt' in doc:
+                doc['processedAt'] = doc['processedAt'].isoformat()
             
             history_data.append(doc)
         
