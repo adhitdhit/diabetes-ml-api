@@ -1,7 +1,5 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
-from datetime import datetime, timedelta
 import os
 import pickle  
 import numpy as np 
@@ -12,57 +10,43 @@ CORS(app)
 
 load_dotenv()
 
-# --- KONFIGURASI DATABASE ---
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://dbUser:admin@ac-xmhlfy4-shard-00-00.toqswqk.mongodb.net:27017,ac-xmhlfy4-shard-00-01.toqswqk.mongodb.net:27017,ac-xmhlfy4-shard-00-02.toqswqk.mongodb.net:27017/Database?ssl=true&replicaSet=atlas-4dejvt-shard-0&authSource=admin&appName=Cluster0")
-client = MongoClient(MONGO_URI)
-db = client["Database"]
-collection = db["Database_3"]
-
 # --- LOAD PIPELINE (IMPUTER + SCALER + MODEL) ---
+# ✅ TIDAK ADA KONEKSI DATABASE DI SINI LAGI!
 try:
+    # Path yang benar untuk Vercel: dari api/index.py ke root/diabetes_model.pkl
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     model_path = os.path.join(BASE_DIR, 'diabetes_model.pkl')
+    
     with open(model_path, 'rb') as f:
         package = pickle.load(f)
-        # ✅ PERUBAHAN 1: Load pipeline lengkap, bukan model/scaler terpisah
         pipeline = package['pipeline']
     print("✅ Pipeline loaded successfully! (Auto handle NaN + Scaling + Prediction)")
 except Exception as e:
     print(f"❌ Error loading pipeline: {e}")
     pipeline = None
 
+@app.route('/')
+def home():
+    return jsonify({
+        "message": "Diabetes ML API is running! 🎉",
+        "status": "ok",
+        "endpoints": {
+            "predict": "POST /predict",
+            "health": "GET /"
+        }
+    })
+
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
+        # ✅ VALIDASI: Pipeline harus loaded
+        if pipeline is None:
+            raise ValueError("Pipeline tidak dimuat. Cek log deployment.")
+            
         data = request.json
+        print(f"📥 Received prediction request: {data}")
         
-        # 1. Simpan data ke DB (status: processing) - DATA MENTAH
-        now_wib = datetime.utcnow() + timedelta(hours=7)
-
-        doc = {
-            "patientName": data.get('patientName'),
-            "patientGender": data.get('patientGender'),
-            "Pregnancies": data.get('Pregnancies'),      # ✅ null tetap null
-            "Glucose": data.get('Glucose'),              # ✅ null tetap null
-            "BloodPressure": data.get('BloodPressure'),  # ✅ null tetap null
-            "SkinThickness": data.get('SkinThickness'),  # ✅ null tetap null
-            "Insulin": data.get('Insulin'),              # ✅ null tetap null
-            "BMI": data.get('BMI'),                      # ✅ null tetap null
-            "DiabetesPedigreeFunction": data.get('DiabetesPedigreeFunction'), # ✅ null tetap null
-            "Age": data.get('Age'),                      # ✅ null tetap null
-            "Prediction_Result": None,
-            "Risk_Score": None,
-            "Risk_Level": None,
-            "Recommendations": None,
-            "status": "processing",
-            "createdAt": now_wib,
-            "processedAt": None
-        }
-        
-        result = collection.insert_one(doc)
-        doc_id = str(result.inserted_id)
-        
-        # 2. ✅ PERSIAPAN FITUR (Null → np.nan)
+        # 1. ✅ PERSIAPAN FITUR (Null → np.nan)
         # Urutan HARUS sama persis dengan kolom saat training di Colab
         raw_features = [
             data.get('Pregnancies'),           
@@ -83,10 +67,7 @@ def predict():
         
         print(f"🔍 Input features (with NaN): {features}")
         
-        # 3. ✅ PREDIKSI LANGSUNG MENGGUNAKAN PIPELINE
-        if pipeline is None:
-            raise ValueError("Pipeline belum dimuat. Cek file diabetes_model.pkl")
-            
+        # 2. ✅ PREDIKSI LANGSUNG MENGGUNAKAN PIPELINE
         # Pipeline secara otomatis melakukan:
         # 1. SimpleImputer: Ganti np.nan dengan mean (sesuai data training)
         # 2. StandardScaler: Scaling fitur
@@ -97,7 +78,7 @@ def predict():
         
         print(f"✅ Prediction done: Class={prediction_val}, Prob={probability:.4f}, Score={risk_score}%")
         
-        # 4. Risk Level & Rekomendasi 
+        # 3. Risk Level & Rekomendasi 
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -131,37 +112,25 @@ def predict():
                 "Pantau gula darah harian & catat pola makan."
             ]
 
-        # 5. Update DB dengan hasil
-        collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {
-                "Prediction_Result": prediction_val,
-                "Risk_Score": risk_score,
-                "Risk_Level": risk_level,
-                "Recommendations": recommendations,
-                "Probability": probability,
-                "status": "completed",
-                "processedAt": datetime.utcnow() + timedelta(hours=7)
-            }}
-        )
-        
-        # 6. Return ke Frontend
+        # 4. ✅ RETURN HASIL SAJA (TANPA SIMPAN KE DATABASE!)
+        # Database handling sekarang 100% di server.js (Express backend)
         return jsonify({
             "success": True,
-            "savedId": doc_id,
             "prediction": prediction_val,
             "probability": probability,
             "riskScore": risk_score,
             "riskLevel": risk_level,
             "recommendations": recommendations,
             "status": "completed"
+            # ❌ HAPUS: "savedId" — tidak ada lagi karena Flask tidak simpan ke DB
         })
         
     except Exception as e:
         print(f"❌ Prediction Error: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
-    
-# ... (route lain seperti /prediction/<id>, /history, dll tetap sama) ...
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
