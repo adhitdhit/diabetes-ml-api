@@ -45,7 +45,7 @@ except Exception as e:
 def home():
     return jsonify({"status": "ok"})
 
-# ✅ CORS PREFLIGHT - FIX: Tambahin Content-Type di headers
+# ✅ CORS PREFLIGHT - Fix Content-Type header
 @app.route('/predict', methods=['OPTIONS'])
 @app.route('/history', methods=['OPTIONS'])
 @app.route('/prediction/<id>', methods=['OPTIONS'])
@@ -53,7 +53,6 @@ def options_handler():
     response = jsonify({"status": "ok"})
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    # ✅ INI YANG FIX ERROR CORS: Izinin header Content-Type
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
     return response, 200
 
@@ -65,7 +64,10 @@ def predict():
             
         data = request.json
         
-        # Simpan data dengan timestamp standar (UTC)
+        # ✅ UTC TIME (Standar Internasional)
+        utc_time = datetime.utcnow()
+        
+        # Simpan data dengan timestamp UTC
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
             "patientGender": data.get('patientGender', '-'),
@@ -83,7 +85,7 @@ def predict():
             "Recommendations": None,
             "Probability": None,
             "status": "processing",
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_time,  # ✅ UTC
             "processedAt": None
         }
         
@@ -103,7 +105,7 @@ def predict():
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # Rekomendasi LENGKAP (JANGAN DIKURANGIN!)
+        # Rekomendasi LENGKAP
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -137,6 +139,9 @@ def predict():
                 "Pantau gula darah harian & catat pola makan."
             ]
 
+        # ✅ UTC TIME untuk processedAt
+        utc_processed = datetime.utcnow()
+        
         collection.update_one(
             {"_id": result.inserted_id},
             {"$set": {
@@ -146,7 +151,7 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-                "processedAt": datetime.utcnow()
+                "processedAt": utc_processed  # ✅ UTC
             }}
         )
         
@@ -174,7 +179,7 @@ def get_prediction_by_id(id):
         if not doc:
             return jsonify({"error": "Not found"}), 404
         
-        # BUILD CLEAN DICT - Convert semua field yang perlu
+        # BUILD CLEAN DICT
         clean_doc = {
             '_id': str(doc['_id']),
             'patientName': doc.get('patientName', 'Unknown'),
@@ -213,7 +218,7 @@ def get_history():
         history_data = []
         for doc in cursor:
             try:
-                # BUILD CLEAN DICT untuk setiap dokumen
+                # BUILD CLEAN DICT
                 clean_doc = {
                     '_id': str(doc['_id']),
                     'patientName': doc.get('patientName', 'Unknown'),
