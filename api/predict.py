@@ -25,7 +25,7 @@ try:
     collection = db["Database_3"]
     print("✅ MongoDB Connected!")
 except Exception as e:
-    print(f"❌ MongoDB Error: {e}")
+    print(f" MongoDB Error: {e}")
 
 # Load Model
 pipeline = None
@@ -39,6 +39,20 @@ try:
     print("✅ Pipeline Loaded!")
 except Exception as e:
     print(f"❌ Model Error: {e}")
+
+# Helper function buat pastiin jam selalu ada "Z" (UTC Marker)
+def _fix_utc(dt):
+    if dt is None: return None
+    # Kalau datetime object
+    if hasattr(dt, 'isoformat'):
+        s = dt.isoformat()
+    else:
+        s = str(dt)
+    
+    # Kalau gak ada Z atau +00:00, tambahin Z manual
+    if not s.endswith('Z') and '+' not in s:
+        s += 'Z'
+    return s
 
 # Routes
 @app.route('/')
@@ -64,7 +78,7 @@ def predict():
             
         data = request.json
         
-        # ✅ FIX TIMEZONE + DEBUG LOG
+        # ✅ PAKAI UTC BENERAN
         utc_time = datetime.now(timezone.utc)
         print(f"🕐 [DEBUG] Saving createdAt: {utc_time.isoformat()}")
         
@@ -113,7 +127,7 @@ def predict():
                 "Hindari konsumsi gula & lemak jenuh berlebihan."
             ]
         elif probability < 0.50:
-            risk_level = "⚠️ SEDANG - Pre-diabetes"
+            risk_level = "️ SEDANG - Pre-diabetes"
             recommendations = [
                 "Kurangi konsumsi karbohidrat sederhana & gula tambahan.",
                 "Tingkatkan aktivitas fisik (jalan cepat/sepeda 30 menit/hari).",
@@ -138,7 +152,7 @@ def predict():
             ]
 
         utc_processed = datetime.now(timezone.utc)
-        print(f"🕐 [DEBUG] Saving processedAt: {utc_processed.isoformat()}")
+        print(f" [DEBUG] Saving processedAt: {utc_processed.isoformat()}")
         
         collection.update_one(
             {"_id": result.inserted_id},
@@ -200,13 +214,14 @@ def get_prediction_by_id(id):
             'Recommendations': doc.get('Recommendations', []),
             'Probability': doc.get('Probability'),
             'status': doc.get('status', 'unknown'),
-            'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc else None,
-            'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc else None
+            # ✅ FIX: Pakai helper _fix_utc biar pasti ada 'Z' nya
+            'createdAt': _fix_utc(doc.get('createdAt')),
+            'processedAt': _fix_utc(doc.get('processedAt'))
         }
         
         return jsonify({"success": True, "data": clean_doc})
     except Exception as e:
-        print(f"❌ Error get_prediction_by_id: {e}")
+        print(f" Error get_prediction_by_id: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/history', methods=['GET'])
@@ -238,8 +253,9 @@ def get_history():
                     'Recommendations': doc.get('Recommendations', []),
                     'Probability': doc.get('Probability'),
                     'status': doc.get('status', 'unknown'),
-                    'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc else None,
-                    'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc else None
+                    # ✅ FIX: Pakai helper _fix_utc biar pasti ada 'Z' nya
+                    'createdAt': _fix_utc(doc.get('createdAt')),
+                    'processedAt': _fix_utc(doc.get('processedAt'))
                 }
                 history_data.append(clean_doc)
             except Exception as doc_error:
