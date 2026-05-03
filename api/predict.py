@@ -3,7 +3,7 @@ from flask_cors import CORS
 import os
 import pickle  
 import numpy as np 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -45,7 +45,7 @@ except Exception as e:
 def home():
     return jsonify({"status": "ok"})
 
-# ✅ CORS PREFLIGHT - Fix Content-Type header
+# ✅ CORS PREFLIGHT
 @app.route('/predict', methods=['OPTIONS'])
 @app.route('/history', methods=['OPTIONS'])
 @app.route('/prediction/<id>', methods=['OPTIONS'])
@@ -64,10 +64,9 @@ def predict():
             
         data = request.json
         
-        # ✅ UTC TIME (Standar Internasional)
-        utc_time = datetime.utcnow()
+        # ✅ FIX TIMEZONE: Pakai timezone.utc biar ada info +00:00
+        utc_time = datetime.now(timezone.utc)
         
-        # Simpan data dengan timestamp UTC
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
             "patientGender": data.get('patientGender', '-'),
@@ -85,14 +84,13 @@ def predict():
             "Recommendations": None,
             "Probability": None,
             "status": "processing",
-            "createdAt": utc_time,  # ✅ UTC
+            "createdAt": utc_time,  # ✅ UTC dengan timezone info
             "processedAt": None
         }
         
         result = collection.insert_one(doc)
         doc_id = str(result.inserted_id)
         
-        # Prediksi
         raw_features = [
             data.get('Pregnancies'), data.get('Glucose'), data.get('BloodPressure'),
             data.get('SkinThickness'), data.get('Insulin'), data.get('BMI'),
@@ -105,7 +103,6 @@ def predict():
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # Rekomendasi LENGKAP
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
@@ -139,8 +136,7 @@ def predict():
                 "Pantau gula darah harian & catat pola makan."
             ]
 
-        # ✅ UTC TIME untuk processedAt
-        utc_processed = datetime.utcnow()
+        utc_processed = datetime.now(timezone.utc)
         
         collection.update_one(
             {"_id": result.inserted_id},
@@ -151,7 +147,7 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-                "processedAt": utc_processed  # ✅ UTC
+                "processedAt": utc_processed  # ✅ UTC dengan timezone info
             }}
         )
         
@@ -179,7 +175,6 @@ def get_prediction_by_id(id):
         if not doc:
             return jsonify({"error": "Not found"}), 404
         
-        # BUILD CLEAN DICT
         clean_doc = {
             '_id': str(doc['_id']),
             'patientName': doc.get('patientName', 'Unknown'),
@@ -198,8 +193,8 @@ def get_prediction_by_id(id):
             'Recommendations': doc.get('Recommendations', []),
             'Probability': doc.get('Probability'),
             'status': doc.get('status', 'unknown'),
-            'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc and hasattr(doc['createdAt'], 'isoformat') else None,
-            'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc and hasattr(doc['processedAt'], 'isoformat') else None
+            'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc else None,
+            'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc else None
         }
         
         return jsonify({"success": True, "data": clean_doc})
@@ -218,7 +213,6 @@ def get_history():
         history_data = []
         for doc in cursor:
             try:
-                # BUILD CLEAN DICT
                 clean_doc = {
                     '_id': str(doc['_id']),
                     'patientName': doc.get('patientName', 'Unknown'),
@@ -237,8 +231,8 @@ def get_history():
                     'Recommendations': doc.get('Recommendations', []),
                     'Probability': doc.get('Probability'),
                     'status': doc.get('status', 'unknown'),
-                    'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc and hasattr(doc['createdAt'], 'isoformat') else None,
-                    'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc and hasattr(doc['processedAt'], 'isoformat') else None
+                    'createdAt': doc['createdAt'].isoformat() if 'createdAt' in doc else None,
+                    'processedAt': doc['processedAt'].isoformat() if 'processedAt' in doc else None
                 }
                 history_data.append(clean_doc)
             except Exception as doc_error:
