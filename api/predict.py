@@ -64,8 +64,9 @@ def predict():
             
         data = request.json
         
-        # ✅ FIX TIMEZONE: Pakai timezone.utc biar ada info +00:00
+        # ✅ FIX TIMEZONE + DEBUG LOG
         utc_time = datetime.now(timezone.utc)
+        print(f"🕐 [DEBUG] Saving createdAt: {utc_time.isoformat()}")
         
         doc = {
             "patientName": data.get('patientName', 'Anonim'),
@@ -84,7 +85,7 @@ def predict():
             "Recommendations": None,
             "Probability": None,
             "status": "processing",
-            "createdAt": utc_time,  # ✅ UTC dengan timezone info
+            "createdAt": utc_time,
             "processedAt": None
         }
         
@@ -137,6 +138,7 @@ def predict():
             ]
 
         utc_processed = datetime.now(timezone.utc)
+        print(f"🕐 [DEBUG] Saving processedAt: {utc_processed.isoformat()}")
         
         collection.update_one(
             {"_id": result.inserted_id},
@@ -147,9 +149,11 @@ def predict():
                 "Recommendations": recommendations,
                 "Probability": probability,
                 "status": "completed",
-                "processedAt": utc_processed  # ✅ UTC dengan timezone info
+                "processedAt": utc_processed
             }}
         )
+        
+        print(f"✅ [DEBUG] Prediction saved with ID: {doc_id}")
         
         return jsonify({
             "success": True,
@@ -163,6 +167,9 @@ def predict():
         })
         
     except Exception as e:
+        print(f"❌ Predict Error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/prediction/<id>', methods=['GET'])
