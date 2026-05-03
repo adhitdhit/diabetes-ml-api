@@ -45,6 +45,7 @@ except Exception as e:
 def home():
     return jsonify({"status": "ok"})
 
+# ✅ CORS PREFLIGHT - FIX: Tambahin Content-Type di headers
 @app.route('/predict', methods=['OPTIONS'])
 @app.route('/history', methods=['OPTIONS'])
 @app.route('/prediction/<id>', methods=['OPTIONS'])
@@ -52,6 +53,8 @@ def options_handler():
     response = jsonify({"status": "ok"})
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    # ✅ INI YANG FIX ERROR CORS: Izinin header Content-Type
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
     return response, 200
 
 @app.route('/predict', methods=['POST'])
@@ -100,7 +103,7 @@ def predict():
         probability = float(pipeline.predict_proba(features)[0][1])
         risk_score = round(probability * 100)
         
-        # Rekomendasi LENGKAP 
+        # Rekomendasi LENGKAP (JANGAN DIKURANGIN!)
         if probability < 0.25:
             risk_level = "✅ RENDAH - Masih aman"
             recommendations = [
